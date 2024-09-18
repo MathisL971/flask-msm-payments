@@ -1,11 +1,10 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 from flask_mail import Mail, Message
 from flask_cors import CORS
 import win32com.client
 import pythoncom
 import os
 import stripe
-import json
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -37,7 +36,7 @@ def query_database(query, table):
         ds = 'Data Source=localhost:' + os.getenv('HFSQL_PORT')
         db = 'Initial Catalog=' + os.getenv('HFSQL_DB')
         creds = 'User ID=' + os.getenv('HFSQL_USER') + ';Password=' + os.getenv('HFSQL_PASSWORD')
-        ex_props = 'Extended Properties="Password=' + table + ':' + os.getenv('HFSQL_TABLE_PASSWORD') + '"'
+        ex_props = 'Extended Properties="' + 'Password=' + table + ':' + os.getenv('HFSQL_TABLE_PASSWORD') + ';' + 'Cryptage=' + os.getenv('HFSQL_ENCRYPTION') + '"'
 
         conn.Open(provider + ';' + ds + ';' + db + ';' + creds + ';' + ex_props)
 
@@ -47,7 +46,12 @@ def query_database(query, table):
 
         results = []
         while not rs.EOF:
-            record = {field.Name: field.Value for field in rs.Fields}
+            record = {}
+            for field in rs.Fields:
+                if (field.Name == 'DATE'):                
+                    record[field.Name] = str(field).split(' ')[0]
+                else:
+                    record[field.Name] = field.Value
             results.append(record)
             rs.MoveNext()
 
@@ -69,7 +73,7 @@ def execute_database(query, table):
         ds = 'Data Source=localhost:' + os.getenv('HFSQL_PORT')
         db = 'Initial Catalog=' + os.getenv('HFSQL_DB')
         creds = 'User ID=' + os.getenv('HFSQL_USER') + ';Password=' + os.getenv('HFSQL_PASSWORD')
-        ex_props = 'Extended Properties="Password=' + table + ':' + os.getenv('HFSQL_TABLE_PASSWORD') + '"'
+        ex_props = 'Extended Properties="' + 'Password=' + table + ':' + os.getenv('HFSQL_TABLE_PASSWORD') + ';' + 'Cryptage=' + os.getenv('HFSQL_ENCRYPTION') + '"'
 
         conn.Open(provider + ';' + ds + ';' + db + ';' + creds + ';' + ex_props)
 
@@ -79,40 +83,37 @@ def execute_database(query, table):
     finally:
         pythoncom.CoUninitialize()
 
-@app.route('/')
-def hello():
-    return "Hello, World!"
+#@app.route('/', defaults={'path': ''})
+@app.route('/invoices/<int:invoice_id>')
+def root(invoice_id):
+    return send_from_directory(app.static_folder, 'index.html')
 
-@app.route('/api/invoices', methods=['GET'])
-def invoices():
-    table = 'Invoice'
-    query = 'SELECT InvoiceID, TotalAmount, Balance FROM ' + table
+@app.route('/api/entries', methods=['GET'])
+def get_entries():
+    table = 'FComptabiliteDB'
+    query = 'SELECT IDFFactureDB, NoFacture, Date, Debit, Credit, Code_Client, Nom_Client FROM ' + table
+    if request.args:
+        query += ' WHERE '
+        for i, key in enumerate(request.args):
+            query += key + ' = ' + request.args.get(key)
+            if i < len(request.args) - 1:
+                query += " AND "
+            
     results = query_database(query, table)
+
     return jsonify(results)
 
-@app.route('/api/invoices/<int:invoice_id>', methods=['GET'])
-def invoice(invoice_id):
-    table = 'Invoice'
-    query = 'SELECT InvoiceID, TotalAmount, Balance FROM ' + table + ' WHERE InvoiceID = ' + str(invoice_id)
-    results = query_database(query, table)
+@app.route('/api/entries', methods=['POST'])
+def create_entry():
+    table = 'FComptabiliteDB'
+    statement = f'INSERT INTO {table} ({', '.join(request.json.keys())}) VALUES ({', '.join([f"'{value}'" for value in tuple(request.json.values())])})'
+    execute_database(statement, table)
 
-    if len(results) == 0:
-        return jsonify(None), 404
-    
-    return jsonify(results[0])
+    query = 'SELECT NoFacture, Debit, Credit FROM ' + table
+    query += ' WHERE NoFacture = ' + str(request.json.get('NoFacture')) + ' AND Credit != 0' 
+    new_entry = query_database(query, table)
 
-@app.route('/api/invoices/<int:invoice_id>', methods=['PATCH'])
-def update_invoice(invoice_id):
-    table = 'Invoice'
-    # For each field in the request, build a SET statement
-    statement = 'UPDATE ' + table
-    update_fields = ', '.join([f"{key} = %s" for key in request.json.keys()])
-    statement += f" SET {update_fields}"
-    statement += f" WHERE InvoiceID = {invoice_id}"
-    values = list(request.json.values())
-    query = statement % tuple(values)
-    results = execute_database(query, table)
-    return jsonify(results)
+    return jsonify(new_entry)
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
