@@ -85,11 +85,6 @@ def execute_database(query, table):
     finally:
         pythoncom.CoUninitialize()
 
-#@app.route('/', defaults={'path': ''})
-@app.route('/invoices/<int:invoice_id>')
-def root(invoice_id):
-    return send_from_directory(app.static_folder, 'index.html')
-
 @app.route('/api/entries', methods=['GET'])
 def get_entries():
     table = 'FComptabiliteDB'
@@ -216,5 +211,7 @@ def webhook():
 
 if __name__ == '__main__':
     # app.run(debug=True)
-    serve(app, host='0.0.0.0', port=80)
+    print('Listening on port 5000...')
+    serve(app, host='0.0.0.0', port=5000)
+    
 
