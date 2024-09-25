@@ -5,6 +5,7 @@ import win32com.client
 import pythoncom
 import os
 import stripe
+import datetime
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -141,7 +142,7 @@ def webhook():
       )
 
       msg.body = 'A payment intent has failed for invoice ' + str(payment_intent['metadata']['invoice_id'])
-      msg.html = '<p>A payment intent has failed for invoice ' + str(payment_intent['metadata']['invoice_id']) + '</p>'
+      msg.html = '<li>A payment intent has failed for invoice ' + str(payment_intent['metadata']['invoice_id']) + '</li>'
 
       with app.app_context():
           mail.send(msg)
@@ -149,18 +150,64 @@ def webhook():
       return 'Email sent!'
     elif event['type'] == 'payment_intent.succeeded':
       payment_intent = event['data']['object']
+      return 'Payment Intent Succeeded!'
+    elif event['type'] == 'charge.succeeded':
+      charge = event['data']['object']
 
       msg = Message(
-        'Payment Intent Succeeded For ' + str(payment_intent['metadata']['invoice_id']),
+        'Invoice ' + str(charge['metadata']['invoice_id']) + ' was settled',
         recipients=[os.getenv('MAIL_USERNAME')]
       )
-      msg.body = 'A payment intent has succeeded for invoice ' + str(payment_intent['metadata']['invoice_id'])
-      msg.html = '<p>A payment intent has succeeded for invoice ' + str(payment_intent['metadata']['invoice_id']) + '</p>'
+
+      msg.html = '<p>Invoice ' + str(charge['metadata']['invoice_id']) + ' was settled. You will find more details about the event below.' + '</p>'
+
+      msg.html += '<h3>Here are the details for the charge:</h3>'
+      msg.html += '<ul>'
+      msg.html += '<li>Stripe ID: ' + str(charge.id) + '</li>'
+      msg.html += '<li>Amount : ' + str(charge.amount / 100.0) + '</li>'
+      msg.html += '<li>Currency: ' + str(charge.currency) + '</li>'
+      created = datetime.datetime.fromtimestamp(charge.created)
+      msg.html += '<li>Date: ' + str(created) + '</li>'
+      msg.html += '</ul>'
+
+      msg.html += '<h3>Here are the details for the payment method:</h3>'
+      msg.html += '<ul>'
+      msg.html += '<li>Stripe ID: ' + str(charge.payment_method) + '</li>'
+      msg.html += '<li>Type: ' + str(charge.payment_method_details.type) + '</li>'
+      msg.html += '<li>Brand: ' + str(charge.payment_method_details.card.brand) + '</li>'
+      msg.html += '<li>Last 4: ' + str(charge.payment_method_details.card.last4) + '</li>'
+      msg.html += '<li>Funding: ' + str(charge.payment_method_details.card.funding) + '</li>'
+      msg.html += '<li>Country: ' + str(charge.payment_method_details.card.country) + '</li>'
+      msg.html += '</ul>'
+
+      msg.html += '<h3>Here are the details for the receipt:</h3>'
+      msg.html += '<ul>'
+      msg.html += '<li>Receiver: ' + str(charge.receipt_email) + '</li>'
+      msg.html += '<li>URL: ' + str(charge.receipt_url) + '</li>'
+      msg.html += '</ul>'
       
       with app.app_context():
           mail.send(msg)
-      
+
       return 'Email sent!'
+    elif event['type'] == 'charge.updated':
+      charge = event['data']['object']
+      return jsonify(charge)
+    elif event['type'] == 'charge.captured':
+      charge = event['data']['object']
+      return jsonify(charge)
+    elif event['type'] == 'charge.failed':
+      charge = event['data']['object']
+      return jsonify(charge)
+    elif event['type'] == 'charge.expired':
+      charge = event['data']['object']
+      return jsonify(charge)
+    elif event['type'] == 'charge.pending':
+      charge = event['data']['object']
+      return jsonify(charge)
+    elif event['type'] == 'charge.refunded':
+      charge = event['data']['object']
+      return jsonify(charge)
     else:
       print('Unhandled event type {}'.format(event['type']))
 
