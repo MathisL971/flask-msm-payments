@@ -1,5 +1,6 @@
 from flask import Flask, jsonify, request, send_from_directory
 from flask_mail import Mail, Message
+from waitress import serve
 from flask_cors import CORS
 import win32com.client
 import pythoncom
@@ -214,4 +215,6 @@ def webhook():
     return jsonify(success=True)
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    # app.run(debug=True)
+    serve(app, host='0.0.0.0', port=80)
+
